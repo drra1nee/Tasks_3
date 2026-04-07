@@ -89,3 +89,21 @@ class TaskQueue:
         if n < 0:
             raise ValueError(f"Количество пропускаемых задач не может быть отрицательным: {n}")
         yield from islice(self._tasks, n, None)
+
+    # Удобные агрегатные методы
+
+    def total_priority(self) -> int:
+        """Сумма приоритетов всех задач"""
+        return sum(t.priority for t in self._tasks)
+
+    def max_priority(self) -> Optional[int]:
+        """Максимальный приоритет в очереди"""
+        if not self._tasks:
+            return None
+        return max(t.priority for t in self._tasks)
+
+    def min_priority(self) -> Optional[int]:
+        """Минимальный приоритет в очереди"""
+        if not self._tasks:
+            return None
+        return min(t.priority for t in self._tasks)
