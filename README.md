@@ -185,32 +185,6 @@ tests/
 | `max_priority()` | Максимальный приоритет |
 | `min_priority()` | Минимальный приоритет |
 
-**Примеры использования:**
-
-```python
-from src.queue.task_queue import TaskQueue
-from src.models.task import Task
-
-queue = TaskQueue()
-queue.add_task(Task(payload="Order", priority=7, status="Pending"))
-queue.add_task(Task(payload="Notify", priority=3, status="Done"))
-
-# Итерация и фильтрация
-for task in queue.filter_by_status("Pending"):
-    print(task.payload)
-
-# Потоковая обработка
-for batch in queue.batch(100):
-    process(batch)
-
-# Пагинация
-from itertools import islice
-page = list(islice(queue.skip(10), 5))
-
-# Агрегация
-total = queue.total_priority()
-```
-
 ---
 
 ### Особенности реализации
