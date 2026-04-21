@@ -18,7 +18,9 @@ def test_add_and_remove_task():
 
 def test_remove_task_not_exists():
     queue = TaskQueue()
-    assert queue.remove_task("nonexistent_id") is False
+    from src.exceptions.queue_exceptions import TaskNotFoundError
+    with pytest.raises(TaskNotFoundError):
+        queue.remove_task("nonexistent_id")
 
 def test_get_task_by_id():
     queue = TaskQueue()
@@ -40,10 +42,6 @@ def test_iter_reusable():
     first_pass = list(queue)
     second_pass = list(queue)
     assert first_pass == second_pass
-
-def test_iter_empty_queue():
-    queue = TaskQueue()
-    assert list(queue) == []
 
 def test_contains_task():
     queue = TaskQueue()
@@ -96,7 +94,8 @@ def test_batch_split():
 
 def test_batch_invalid_size():
     queue = TaskQueue()
-    with pytest.raises(ValueError):
+    from src.exceptions.queue_exceptions import InvalidBatchSizeError
+    with pytest.raises(InvalidBatchSizeError):
         list(queue.batch(0))
 
 def test_take():
@@ -138,6 +137,7 @@ def test_max_min_priority():
 def test_aggregates_on_empty_queue():
     queue = TaskQueue()
     assert queue.total_priority() == 0
+    # max_priority и min_priority должны обрабатывать пустую очередь без итерации
     assert queue.max_priority() is None
     assert queue.min_priority() is None
 

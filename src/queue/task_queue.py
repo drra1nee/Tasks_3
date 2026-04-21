@@ -4,7 +4,6 @@ from typing import Iterator, Optional, Callable, Iterable
 from itertools import islice
 from ..models.task import Task
 from ..exceptions.queue_exceptions import (
-    EmptyQueueError,
     TaskNotFoundError,
     InvalidBatchSizeError,
     InvalidSkipCountError,
@@ -90,8 +89,6 @@ class TaskQueue:
 
     def __iter__(self) -> Iterator[Task]:
         """Возвращает новый итератор по задачам, поддерживает многократный обход очереди"""
-        if len(self) == 0:
-            raise EmptyQueueError("Невозможно создать итератор по пустой очереди")
         return self._get_tasks()
 
     def __len__(self) -> int:
