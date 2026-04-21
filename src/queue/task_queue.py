@@ -37,29 +37,21 @@ class TaskQueue:
         return self._cache
 
     def _get_tasks(self) -> Iterator[Task]:
-        """Возвращает итератор по задачам, используя кэш при необходимости"""
+        """Возвращает итератор по задачам"""
         if self._cache is not None:
             yield from self._cache
-        else:
-            # Первый обход: читаем источник и pending задачи
-            if self._source is not None:
-                for task in self._source:
-                    yield task
-                self._source = None
-
-            # Добавляем pending задачи
-            for task in self._pending:
+            return
+        self._cache = []
+        if self._source is not None:
+            for task in self._source:
+                self._cache.append(task)
                 yield task
-
-            # После первого полного обхода материализуем в кэш
-            if self._cache is None:
-                self._cache = []
-                if self._source is not None:
-                    for task in self._source:
-                        self._cache.append(task)
-                    self._source = None
-                self._cache.extend(self._pending)
-                self._pending = []
+            self._source = None
+        if self._pending:
+            for task in self._pending:
+                self._cache.append(task)
+                yield task
+            self._pending = []
 
     def add_task(self, task: Task) -> None:
         """Добавляет задачу в очередь"""
