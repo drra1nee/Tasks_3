@@ -1,6 +1,6 @@
 """Очередь задач с поддержкой итерации, фильтрации и потоковой обработки"""
 
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Callable, Iterable
 from itertools import islice
 from ..models.task import Task
 
@@ -8,37 +8,106 @@ from ..models.task import Task
 class TaskQueue:
     """Коллекция задач с ленивой фильтрацией и потоковой обработкой"""
 
-    def __init__(self) -> None:
-        """Инициализирует пустую очередь задач"""
-        self._tasks: list[Task] = []
+    def __init__(self, tasks_iter: Optional[Iterable[Task]] = None) -> None:
+        """
+        Инициализирует очередь задач
+        tasks_iter: Итерируемый источник задач, если не указан, создаётся пустая очередь
+        """
+        self._source: Optional[Iterable[Task]] = tasks_iter
+        self._pending: list[Task] = []  # Задачи, добавленные до первого обхода
+        self._cache: Optional[list[Task]] = None  # Кэш для повторного обхода
+
+    def _materialize(self) -> list[Task]:
+        """Материализует все задачи в кэш"""
+        if self._cache is not None:
+            return self._cache
+
+        self._cache = []
+        # Сначала добавляем задачи из источника
+        if self._source is not None:
+            for task in self._source:
+                self._cache.append(task)
+            self._source = None
+
+        # Затем добавляем отложенные задачи
+        if self._pending:
+            self._cache.extend(self._pending)
+            self._pending = []
+
+        return self._cache
+
+    def _get_tasks(self) -> Iterator[Task]:
+        """Возвращает итератор по задачам, используя кэш при необходимости"""
+        if self._cache is not None:
+            yield from self._cache
+        else:
+            # Первый обход: читаем источник и pending задачи
+            if self._source is not None:
+                for task in self._source:
+                    yield task
+                self._source = None
+
+            # Добавляем pending задачи
+            for task in self._pending:
+                yield task
+
+            # После первого полного обхода материализуем в кэш
+            if self._cache is None:
+                self._cache = []
+                if self._source is not None:
+                    for task in self._source:
+                        self._cache.append(task)
+                    self._source = None
+                self._cache.extend(self._pending)
+                self._pending = []
 
     def add_task(self, task: Task) -> None:
         """Добавляет задачу в очередь"""
-        self._tasks.append(task)
+        if self._cache is not None:
+            self._cache.append(task)
+        else:
+            self._pending.append(task)
 
     def remove_task(self, task_id: str) -> bool:
         """Удаляет задачу по ID"""
-        for i, task in enumerate(self._tasks):
-            if task.id == task_id:
-                self._tasks.pop(i)
-                return True
-        return False
+        if self._cache is not None:
+            for i, task in enumerate(self._cache):
+                if task.id == task_id:
+                    self._cache.pop(i)
+                    return True
+            return False
+        elif self._source is not None:
+            self._materialize()
+            for i, task in enumerate(self._cache):
+                if task.id == task_id:
+                    self._cache.pop(i)
+                    return True
+            return False
+        else:
+            for i, task in enumerate(self._pending):
+                if task.id == task_id:
+                    self._pending.pop(i)
+                    return True
+            return False
 
     def __iter__(self) -> Iterator[Task]:
-        """Возвращает новый итератор по задачам"""
-        return iter(self._tasks)
+        """Возвращает новый итератор по задачам, поддерживает многократный обход очереди"""
+        return self._get_tasks()
 
     def __len__(self) -> int:
         """Количество задач в очереди"""
-        return len(self._tasks)
+        return len(self._materialize())
 
     def __contains__(self, task: Task) -> bool:
         """Проверка наличия задачи в очереди"""
-        return task in self._tasks
+        for t in self:
+            if t == task:
+                return True
+        return False
 
     def get_task_by_id(self, task_id: str) -> Optional[Task]:
         """Возвращает задачу по ID или None если не найдена"""
-        for task in self._tasks:
+        for task in self:
             if task.id == task_id:
                 return task
         return None
@@ -47,27 +116,38 @@ class TaskQueue:
 
     def filter_by_status(self, status: str) -> Iterator[Task]:
         """Генератор задач с указанным статусом"""
-        for task in self._tasks:
+        for task in self:
             if task.status == status:
                 yield task
 
     def filter_by_priority(self, min_priority: int, max_priority: int) -> Iterator[Task]:
-        """Генератор задач в диапазоне приоритетов (включительно)"""
-        for task in self._tasks:
+        """Генератор задач в диапазоне приоритетов"""
+        for task in self:
             if min_priority <= task.priority <= max_priority:
                 yield task
 
     def filter_ready(self) -> Iterator[Task]:
         """Генератор готовых к выполнению задач"""
-        for task in self._tasks:
+        for task in self:
             if task.is_ready:
                 yield task
 
     def filter_completed(self) -> Iterator[Task]:
         """Генератор завершённых задач"""
-        for task in self._tasks:
+        for task in self:
             if task.is_completed:
                 yield task
+
+    def filter(self, predicate: Callable[[Task], bool]) -> Iterator[Task]:
+        """Универсальный ленивый фильтр по предикату"""
+        for task in self:
+            if predicate(task):
+                yield task
+
+    def map(self, func: Callable[[Task], any]) -> Iterator[any]:
+        """Ленивое преобразование задач"""
+        for task in self:
+            yield func(task)
 
     # Потоковая обработка
 
@@ -75,35 +155,49 @@ class TaskQueue:
         """Генератор пакетов задач указанного размера"""
         if size <= 0:
             raise ValueError(f"Размер пакета должен быть положительным: {size}")
-        for i in range(0, len(self._tasks), size):
-            yield self._tasks[i:i + size]
+        batch = []
+        for task in self:
+            batch.append(task)
+            if len(batch) >= size:
+                yield batch
+                batch = []
+        if batch:
+            yield batch
 
     def take(self, n: int) -> Iterator[Task]:
         """Генератор первых n задач"""
         if n <= 0:
             return
-        yield from islice(self._tasks, n)
+        count = 0
+        for task in self:
+            if count >= n:
+                break
+            yield task
+            count += 1
 
     def skip(self, n: int) -> Iterator[Task]:
         """Генератор задач, пропуская первые n"""
         if n < 0:
             raise ValueError(f"Количество пропускаемых задач не может быть отрицательным: {n}")
-        yield from islice(self._tasks, n, None)
+        count = 0
+        for task in self:
+            if count < n:
+                count += 1
+                continue
+            yield task
 
     # Удобные агрегатные методы
 
     def total_priority(self) -> int:
         """Сумма приоритетов всех задач"""
-        return sum(t.priority for t in self._tasks)
+        return sum(t.priority for t in self)
 
     def max_priority(self) -> Optional[int]:
         """Максимальный приоритет в очереди"""
-        if not self._tasks:
-            return None
-        return max(t.priority for t in self._tasks)
+        priorities = [t.priority for t in self]
+        return max(priorities) if priorities else None
 
     def min_priority(self) -> Optional[int]:
         """Минимальный приоритет в очереди"""
-        if not self._tasks:
-            return None
-        return min(t.priority for t in self._tasks)
+        priorities = [t.priority for t in self]
+        return min(priorities) if priorities else None
