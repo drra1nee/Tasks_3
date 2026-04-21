@@ -3,6 +3,12 @@
 from typing import Iterator, Optional, Callable, Iterable
 from itertools import islice
 from ..models.task import Task
+from ..exceptions.queue_exceptions import (
+    EmptyQueueError,
+    TaskNotFoundError,
+    InvalidBatchSizeError,
+    InvalidSkipCountError,
+)
 
 
 class TaskQueue:
@@ -67,23 +73,25 @@ class TaskQueue:
                 if task.id == task_id:
                     self._cache.pop(i)
                     return True
-            return False
+            raise TaskNotFoundError(f"Задача с ID '{task_id}' не найдена в очереди")
         elif self._source is not None:
             self._materialize()
             for i, task in enumerate(self._cache):
                 if task.id == task_id:
                     self._cache.pop(i)
                     return True
-            return False
+            raise TaskNotFoundError(f"Задача с ID '{task_id}' не найдена в очереди")
         else:
             for i, task in enumerate(self._pending):
                 if task.id == task_id:
                     self._pending.pop(i)
                     return True
-            return False
+            raise TaskNotFoundError(f"Задача с ID '{task_id}' не найдена в очереди")
 
     def __iter__(self) -> Iterator[Task]:
         """Возвращает новый итератор по задачам, поддерживает многократный обход очереди"""
+        if len(self) == 0:
+            raise EmptyQueueError("Невозможно создать итератор по пустой очереди")
         return self._get_tasks()
 
     def __len__(self) -> int:
@@ -146,7 +154,7 @@ class TaskQueue:
     def batch(self, size: int) -> Iterator[list[Task]]:
         """Генератор пакетов задач указанного размера"""
         if size <= 0:
-            raise ValueError(f"Размер пакета должен быть положительным: {size}")
+            raise InvalidBatchSizeError(f"Размер пакета должен быть положительным: {size}")
         batch = []
         for task in self:
             batch.append(task)
@@ -170,7 +178,7 @@ class TaskQueue:
     def skip(self, n: int) -> Iterator[Task]:
         """Генератор задач, пропуская первые n"""
         if n < 0:
-            raise ValueError(f"Количество пропускаемых задач не может быть отрицательным: {n}")
+            raise InvalidSkipCountError(f"Количество пропускаемых задач не может быть отрицательным: {n}")
         count = 0
         for task in self:
             if count < n:
