@@ -10,6 +10,51 @@ from ..exceptions.queue_exceptions import (
 )
 
 
+class TaskQueueIterator:
+    """Явный итератор для очереди задач с поддержкой __next__ и StopIteration"""
+
+    def __init__(self, queue: 'TaskQueue') -> None:
+        self._queue = queue
+        self._index = 0
+        self._is_first_pass = (queue._cache is None)
+
+        if self._is_first_pass:
+            self._queue._cache = []
+            self._source_iter = iter(queue._source) if queue._source is not None else None
+        else:
+            self._source_iter = None
+
+    def __iter__(self) -> Iterator[Task]:
+        return self
+
+    def __next__(self) -> Task:
+        if self._queue._cache is not None and self._index < len(self._queue._cache):
+            task = self._queue._cache[self._index]
+            self._index += 1
+            return task
+
+        if not self._is_first_pass:
+            raise StopIteration("Конец очереди задач")
+
+        if self._source_iter is not None:
+            try:
+                task = next(self._source_iter)
+                self._queue._cache.append(task)
+                self._index += 1
+                return task
+            except StopIteration:
+                self._source_iter = None
+                self._queue._source = None
+
+        if self._queue._pending:
+            task = self._queue._pending.pop(0)
+            self._queue._cache.append(task)
+            self._index += 1
+            return task
+
+        raise StopIteration("Конец очереди задач")
+
+
 class TaskQueue:
     """Коллекция задач с ленивой фильтрацией и потоковой обработкой"""
 
@@ -41,22 +86,6 @@ class TaskQueue:
 
         return self._cache
 
-    def _get_tasks(self) -> Iterator[Task]:
-        """Возвращает итератор по задачам"""
-        if self._cache is not None:
-            yield from self._cache
-            return
-        self._cache = []
-        if self._source is not None:
-            for task in self._source:
-                self._cache.append(task)
-                yield task
-            self._source = None
-        if self._pending:
-            for task in self._pending:
-                self._cache.append(task)
-                yield task
-            self._pending = []
 
     def add_task(self, task: Task) -> None:
         """Добавляет задачу в очередь"""
@@ -89,7 +118,7 @@ class TaskQueue:
 
     def __iter__(self) -> Iterator[Task]:
         """Возвращает новый итератор по задачам, поддерживает многократный обход очереди"""
-        return self._get_tasks()
+        return TaskQueueIterator(self)
 
     def __len__(self) -> int:
         """Количество задач в очереди"""
