@@ -25,9 +25,14 @@ class TaskQueueIterator:
             self._source_iter = None
 
     def __iter__(self) -> Iterator[Task]:
+        """Возвращает сам итератор """
         return self
 
     def __next__(self) -> Task:
+        """
+        Возвращает следующую задачу из очереди
+        Если задач больше нет - явно выбрасывает StopIteration
+        """
         if self._queue._cache is not None and self._index < len(self._queue._cache):
             task = self._queue._cache[self._index]
             self._index += 1

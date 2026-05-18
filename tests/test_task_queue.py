@@ -154,3 +154,74 @@ def test_sorted_by_priority():
     queue.add_task(Task(payload="C", priority=5))
     sorted_tasks = sorted(queue, key=lambda t: t.priority)
     assert [t.priority for t in sorted_tasks] == [3, 5, 7]
+
+def test_iterator_with_source():
+    def gen():
+        yield Task(payload="A")
+        yield Task(payload="B")
+    queue = TaskQueue(gen())
+    tasks = list(queue)
+    assert len(tasks) == 2
+    assert tasks[0].payload == "A"
+
+def test_materialize_with_source():
+    def gen():
+        yield Task(payload="A")
+    queue = TaskQueue(gen())
+    assert len(queue) == 1
+
+def test_add_task_to_cache():
+    queue = TaskQueue()
+    list(queue) # Initialize cache
+    queue.add_task(Task(payload="A"))
+    assert len(queue) == 1
+
+def test_remove_task_from_cache_error():
+    queue = TaskQueue()
+    list(queue) # Initialize cache
+    from src.exceptions.queue_exceptions import TaskNotFoundError
+    with pytest.raises(TaskNotFoundError):
+        queue.remove_task("fake_id")
+
+def test_remove_task_from_source():
+    task = Task(payload="A")
+    def gen():
+        yield task
+    queue = TaskQueue(gen())
+    assert queue.remove_task(task.id) is True
+
+def test_remove_task_from_pending():
+    queue = TaskQueue()
+    task = Task(payload="A")
+    queue.add_task(task)
+    assert queue.remove_task(task.id) is True
+
+def test_contains_false():
+    queue = TaskQueue()
+    assert Task(payload="A") not in queue
+
+def test_get_task_by_id_none():
+    queue = TaskQueue()
+    assert queue.get_task_by_id("fake") is None
+
+def test_filter_predicate():
+    queue = TaskQueue()
+    queue.add_task(Task(payload="A"))
+    res = list(queue.filter(lambda t: t.payload == "A"))
+    assert len(res) == 1
+
+def test_map():
+    queue = TaskQueue()
+    queue.add_task(Task(payload="A"))
+    res = list(queue.map(lambda t: t.payload))
+    assert res == ["A"]
+
+def test_take_zero():
+    queue = TaskQueue()
+    assert list(queue.take(0)) == []
+
+def test_skip_negative():
+    queue = TaskQueue()
+    from src.exceptions.queue_exceptions import InvalidSkipCountError
+    with pytest.raises(InvalidSkipCountError):
+        list(queue.skip(-1))

@@ -78,6 +78,15 @@ def demo_task_queue() -> None:
     for task in queue:
         print(f"  {task.id}: {task.payload} (priority={task.priority}, status={task.status})")
 
+    # Ручной обход через Итератор (iter и next)
+    print("\nРучной вызов итератора (iter и next):")
+    iterator = iter(queue)
+    try:
+        print(f"  Первая: {next(iterator).payload}")
+        print(f"  Вторая: {next(iterator).payload}")
+    except StopIteration:
+        pass
+
     # Повторный обход
     print("\nПовторный обход (второй for):")
     count = sum(1 for _ in queue)
